@@ -2,30 +2,16 @@ from openai import OpenAI
 import json
 import inspect
 from typing import Dict, Callable, Any, List, Optional
+from system_prompt import SystemPrompt
+from tools import Tools  # Import the Tools class
+import os
+from dotenv import load_dotenv
 
-system_prompt = """
-You are a helpful assistant that can answer questions and help with tasks.
-You are a expert in the field of data analysis and data science.
-You are given a question and you need to answer it based on the information provided.
-You are also given a memory of the conversation that has already taken place.
-You need to use the memory to answer the question.
-
-When you need to use tools, you can call them by responding with a JSON object in the following format:
-{
-    "tool_call": {
-        "name": "tool_name",
-        "arguments": {"arg1": "value1", "arg2": "value2"}
-    }
-}
-
-Available tools will be described to you in the system prompt.
-
-You can also use the tools to answer the question.
-
-You have access to a SQLite database.
+load_dotenv('.env.local')
+# Get the KEY from .env file
+KEY = os.getenv("OPENROUTER_API_KEY")
 
 
-"""
 
 def sql_query(query: str) -> List[tuple]:
     """
@@ -47,16 +33,28 @@ def sql_query(query: str) -> List[tuple]:
     except Exception as e:
         return [("Error executing query:", str(e))]
 
+
+
+
+
+
+
 class LLM:
     def __init__(self):
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key="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",
+            api_key=KEY
         )
         self.tools: Dict[str, Dict[str, Any]] = {}
         
         # Register SQL query tool by default
         self.register_tool("sql_query", sql_query)
+
+        # Instantiate the Tools class
+        self.tool_instance = Tools()
+
+        # Register the Tools class methods
+        self.register_tools_from_class(self.tool_instance) #New line
         
     def register_tool(self, name: str, func: Callable) -> None:
         """
@@ -85,6 +83,15 @@ class LLM:
             "parameters": params
         }
         print(f"[DEBUG] Registered tool: {name}")
+    
+    def register_tools_from_class(self, tool_instance):
+        """
+        Registers all methods from a class as tools.
+        """
+        for name in dir(tool_instance):
+            method = getattr(tool_instance, name)
+            if callable(method) and not name.startswith("__"):  # Avoid private methods
+                self.register_tool(name, method)
         
     def get_tools_description(self) -> str:
         """
@@ -167,7 +174,7 @@ class LLM:
         Returns:
             str: The final response after all tool calls
         """
-        current_system_prompt = system_prompt_override or system_prompt
+        current_system_prompt = system_prompt_override or SystemPrompt().system_prompt
         tools_description = self.get_tools_description()
         full_system_prompt = f"{current_system_prompt}\n\n{tools_description}"
         

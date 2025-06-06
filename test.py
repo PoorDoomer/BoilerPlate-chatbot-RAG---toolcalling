@@ -4,19 +4,20 @@ import os
 from llm import LLM
 connection = sqlite3.connect("database.db")
 
+from dotenv import load_dotenv
 
+load_dotenv('.env.local')
+
+# Get the KEY from .env.local file
+KEY = os.getenv("OPENROUTER_API_KEY")
+print(KEY)
 agent = LLM()
 
-get_completion = agent.get_completion("Get the names of the tables in the database")
+get_completion = agent.get_completion("Quel est la conso electrique EAF totale?")
 
 print(get_completion)
 
-sheets = pd.read_excel("DATA-ACIERIE.xlsx",sheet_name=None)
-
-
-
-
-
+# sheets = pd.read_excel("DATA-ACIERIE.xlsx",sheet_name=None)
 
 
 

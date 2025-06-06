@@ -6,3 +6,5 @@ openai
 sqlite3
 pandas
 openpyxl
+python-magic
+python-multipart
