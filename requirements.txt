@@ -1,0 +1,8 @@
+litellm
+fastapi
+uvicorn
+pydantic
+openai
+sqlite3
+pandas
+openpyxl
