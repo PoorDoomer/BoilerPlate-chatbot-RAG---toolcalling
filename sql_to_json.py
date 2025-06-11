@@ -210,7 +210,7 @@ def main():
     
     # Check if database exists
     if not Path(db_path).exists():
-        db_path = "database.db"
+        db_path = "databasevf.db"
     
     # Determine output path
     if len(sys.argv) >= 3:
@@ -223,7 +223,6 @@ def main():
         # Extract schema
         with SQLiteSchemaExtractor(db_path) as extractor:
             schema = extractor.extract_schema()
-        
         # Save to JSON
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(schema, f, indent=2, ensure_ascii=False)
