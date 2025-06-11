@@ -17,6 +17,9 @@ get_completion = agent.get_completion("Quel est la conso electrique EAF totale?"
 
 print(get_completion)
 
+
+
+
 # sheets = pd.read_excel("DATA-ACIERIE.xlsx",sheet_name=None)
 
 
