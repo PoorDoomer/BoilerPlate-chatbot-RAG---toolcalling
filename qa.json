@@ -2,11 +2,16 @@
     "questions": [
         {
             "question": "Quel est la conso electrique EAF totale?",
-            "answer": "1000"
+            "answer": "45926712.86"
         },
         {
-            "question": "Quel est la conso electrique EAF totale?",
-            "answer": "1000"
+            "question": "Quel est la conso electrique LF totale?",
+            "answer": "3698200"
+        },
+        {
+            "question": "Quel est la conso electrique totale?",
+            "answer": "49624912.86"
         }
+
     ]
 }

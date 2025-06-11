@@ -4,7 +4,7 @@
     "sqlite_version": "3.49.1"
   },
   "tables": {
-    "Dictionnaire de données": {
+    "Dictionnaire_de_donnee": {
       "columns": [
         {
           "cid": 0,

@@ -1,3 +1,4 @@
+import re
 from openai import OpenAI
 import json
 import inspect
@@ -24,7 +25,7 @@ def sql_query(query: str) -> List[tuple]:
     """
     import sqlite3
     try:
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect('databasevf.db')
         cursor = conn.cursor()
         cursor.execute(query)
         result = cursor.fetchall()
@@ -137,34 +138,53 @@ class LLM:
             error_msg = f"Error executing tool '{tool_name}': {str(e)}"
             print(f"[DEBUG] {error_msg}")
             return error_msg
-            
-    def parse_tool_call(self, response: str) -> Optional[Dict[str, Any]]:
+
+
+    
+    def parse_tool_call(self,msg: str):
+        code_blocks = re.findall(r"```json\s*([\s\S]*?)\s*```", msg)
+        if not code_blocks:                       # 2) sinon, tenter d'extraire
+            code_blocks = re.findall(r"\{[\s\S]*?\}", msg)   #   n'importe quel objet JSON
+        for block in code_blocks:
+            try:
+                obj = json.loads(block)
+                if "tool_call" in obj:
+                    return obj["tool_call"]
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    
+    def clean_response_for_context(self, response: str) -> str:
         """
-        Parse the response to extract tool call information.
+        Clean assistant response for inclusion in conversation context.
+        Removes tool calls and formats the reasoning part for ReAct pattern.
         
         Args:
-            response (str): The LLM response to parse
+            response (str): The assistant's response to clean
             
         Returns:
-            Optional[Dict[str, Any]]: The parsed tool call or None
+            str: Cleaned response suitable for context
         """
-        try:
-            # Look for JSON-like tool call in the response
-            if "tool_call" in response:
-                # Extract JSON part
-                start = response.find("{")
-                end = response.rfind("}") + 1
-                if start != -1 and end != 0:
-                    json_str = response[start:end]
-                    tool_call_data = json.loads(json_str)
-                    return tool_call_data.get("tool_call")
-        except (json.JSONDecodeError, AttributeError):
-            pass
-        return None
+        # Remove JSON tool calls using regex
+        cleaned = re.sub(r'```json\s*{.*?}\s*```', '', response, flags=re.DOTALL)
+        
+        # Remove excessive whitespace and newlines
+        cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
+        cleaned = cleaned.strip()
+        
+        # Extract reasoning/thinking part (before tool calls typically)
+        if cleaned:
+            # Keep only the reasoning part, typically before tool execution
+            reasoning_match = re.search(r'^(.*?)(?=\n*(?:I need to|Let me|I should|I will use))', cleaned, re.DOTALL | re.IGNORECASE)
+            if reasoning_match:
+                cleaned = reasoning_match.group(1).strip()
+        
+        return cleaned if cleaned else ""
 
     def get_completion(self, prompt: str, system_prompt_override: Optional[str] = None, max_tool_calls: int = 5) -> str:
         """
-        Get completion from LLM with tool calling support.
+        Get completion from LLM with tool calling support and ReAct pattern.
         
         Args:
             prompt (str): The user prompt
@@ -179,6 +199,7 @@ class LLM:
         full_system_prompt = f"{current_system_prompt}\n\n{tools_description}"
         
         conversation_history = []
+        assistant_responses = []  # Track assistant responses for ReAct pattern
         tool_call_count = 0
         
         # Initial user prompt
@@ -186,23 +207,41 @@ class LLM:
         
         while tool_call_count < max_tool_calls:
             try:
+                # Build conversation context with previous assistant reasoning
+                context_parts = [full_system_prompt]
+                
+                if assistant_responses:
+                    context_parts.append("\n--- Previous Reasoning Chain ---")
+                    for i, resp in enumerate(assistant_responses):
+                        cleaned_resp = self.clean_response_for_context(resp)
+                        if cleaned_resp:
+                            context_parts.append(f"Step {i+1} Reasoning: {cleaned_resp}")
+                    context_parts.append("--- End Previous Reasoning ---\n")
+                
+                context_parts.append(f"Current Task: {current_prompt}")
+                
+                full_context = "\n\n".join(context_parts)
+                
                 completion = self.client.chat.completions.create(
                     extra_headers={
                         "HTTP-Referer": "<YOUR_SITE_URL>",
                         "X-Title": "<YOUR_SITE_NAME>",
                     },
                     extra_body={},
-                    model="deepseek/deepseek-r1-0528:free", 
+                    model="qwen/qwen3-8b:free", 
                     messages=[
                         {
                             "role": "user",
-                            "content": f"{full_system_prompt}\n\n\nAnd this is the actual user prompt: {current_prompt}"
+                            "content": full_context
                         }
                     ]
                 )
                 
                 response = completion.choices[0].message.content
                 print(f"[DEBUG] LLM Response: {response[:200]}...")
+                
+                # Store the response for ReAct chain
+                assistant_responses.append(response)
                 
                 # Check if the response contains a tool call
                 tool_call = self.parse_tool_call(response)
@@ -217,13 +256,19 @@ class LLM:
                     tool_result = self.execute_tool(tool_name, arguments)
                     
                     # Update the prompt with tool result for next iteration
-                    current_prompt = f"Previous tool call result:\nTool: {tool_name}\nArguments: {arguments}\nResult: {tool_result}\n\nOriginal user prompt: {prompt}\n\nPlease provide your final response based on the tool result."
+                    current_prompt = f"Tool Result from {tool_name}:\n{tool_result}\n\nOriginal user prompt: {prompt}\n\nContinue reasoning and provide the final answer based on this result."
                     
                     tool_call_count += 1
                     conversation_history.append({
                         "tool_call": tool_call,
-                        "tool_result": tool_result
+                        "tool_result": tool_result,
+                        "reasoning": self.clean_response_for_context(response)
                     })
+                    
+                    # Limit assistant responses history to prevent context explosion
+                    if len(assistant_responses) > 3:  # Keep only last 3 reasoning steps
+                        assistant_responses = assistant_responses[-3:]
+                        
                 else:
                     # No tool call, return the response
                     print(f"[DEBUG] No tool call detected, returning final response")
@@ -234,5 +279,5 @@ class LLM:
                 print(f"[DEBUG] {error_msg}")
                 return error_msg
         
-        return f"Maximum tool calls ({max_tool_calls}) reached. Conversation history: {conversation_history}"
+        return f"Maximum tool calls ({max_tool_calls}) reached. Final reasoning chain: {[self.clean_response_for_context(resp) for resp in assistant_responses[-2:]]}"
 

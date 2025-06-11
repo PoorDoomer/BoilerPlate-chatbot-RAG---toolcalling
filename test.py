@@ -2,7 +2,6 @@ import pandas as pd
 import sqlite3
 import os
 from llm import LLM
-connection = sqlite3.connect("database.db")
 
 from dotenv import load_dotenv
 
@@ -13,7 +12,7 @@ KEY = os.getenv("OPENROUTER_API_KEY")
 print(KEY)
 agent = LLM()
 
-get_completion = agent.get_completion("Quel est la conso electrique EAF totale?")
+get_completion = agent.get_completion("Quel est la conso electrique  totale?")
 
 print(get_completion)
 

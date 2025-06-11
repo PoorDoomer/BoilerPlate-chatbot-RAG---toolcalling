@@ -15,6 +15,7 @@ When you need to use tools, you can call them by responding with a JSON object i
         "arguments": {"arg1": "value1", "arg2": "value2"}
     }
 }
+When you call a tool you MUST wrap a JSON object in a fenced block json ```json containing only tool_call.
 
 Available tools will be described to you in the system prompt.
 
@@ -79,27 +80,136 @@ Enchaînement du Flux
 
 Ferraille → [PAF] → [EAF : Fusion] → [LF : Affinage] → [CCM : Solidification] → Brames
 
-
+Pour toute question specifique a un processus, vous pouvez utiliser le dictionnaire de donnee pour trouver les informations necessaires.
+Voici le dictionnaire de donnee:
+{
+    "ANALYSES_CHIMIQUES": {
+        "ID_ANALYSE": "Primary Key",
+        "DATE_TIME": "Date Analyse",
+        "HEATID": "N° Coulée",
+        "GRADE": "Grade demandée",
+        "LOCATION": "Zone Echantillon (EAF, LF, TUN) TUN=CCM",
+        "SAMPLENBR": "N° Echantillon",
+        "_Ca, _La, ....": "% des élements "
+    },
+    "CONSOM_PAF": {
+        "CSO_DATE": "Date",
+        "CSO_SEMAINE": "Semaine",
+        "CSO_NUM_COULEE": "N° Coulée",
+        "CSO_ORDRE_PANIER": "Ordre panier (2 ou 3 paniers par coulée)",
+        "CSO_TARE": "Poids Tare",
+        "CSO_GRADE": "Grade demandée",
+        "CSD_BOX": "Box où existe ferraille chargé",
+        "CSD_POIDS": "Poids chargé",
+        "CSD_ORDRE": "Ordre de la ferraille dans la panier",
+        "FERR_NOM": "Nom ferraille",
+        "NOM_ABR": "Nom abréviation CAT-FERR",
+        "CAT_NOM": "Catégories ferrailles"
+    },
+    "DEFAUTS_BRAMES": {
+        "DFB_ID": "Primary Key",
+        "DFB_NUM_SEQ": "N° Séquence",
+        "DFB_NUM_COULEE": "N° Coulée",
+        "DFB_NUM_BRAME": "N° Brame",
+        "DFB_COMMENTAIRE": "Commentaire",
+        "DFB_GRAVITE": "Gravité  (0:RAS, 1: Légère, 2:Moyenne, 3:Grave)",
+        "DFT_NOM": "Libellé Défaut"
+    },
+    "EAF_ARRETS": {
+        "IDDELAY": "Primary Key",
+        "HEATID": "Foreign Key",
+        "TREATID": "Foreign Key",
+        "DELAYSTART": "Heure Début",
+        "DELAYEND": "Heure Fin",
+        "DURATION": "Durée",
+        "COMMENT_OPERATOR": "Commentaire",
+        "DELAYDESCR": "Arrêt",
+        "GROUPNAME": "Type Arrêt",
+        "SECTIONNAME": "Catégorie Arrêt"
+    },
+    "PROD_CCM_BRAMES": {
+        "SLAB_STEEL_ID": "Primary Key",
+        "HEAT_STEEL_ID": "Foreign Key (Table PROD_CCM_COULEE)",
+        "PIECE_WEIGHT_MEAS": "Poids Brame",
+        "NOMINAL_THICKNESS": "Epaisseur Brame",
+        "NOMINAL_WIDTH_HEAD": "Largeur Brame",
+        "PIECE_LENGTH": "Longueur Brame",
+        "CUT_TIME": "Date Oxycoupage",
+        "SLAB_SEQ_NO": "Ordre dans la coulée",
+        "MARKID_ACT": "Marquage sur labrame"
+    },
+    "PROD_CCM_COULEE": {
+        "HEAT_STEEL_ID": "Primary Key",
+        "SEQUENCE_STEEL_ID": "Foreign Key (Table Séquences)",
+        "HEATID": "N° Coulée",
+        "TREAT_COUNTER": "N° Traitement",
+        "GRADE_CODE": "Grade demandée",
+        "HEAT_SEQ_NO": "Ordre dans la séquence",
+        "LADLE_NO": "N° Poche ",
+        "LADLE_ARRIVAL_TIME": "Heure d'arrivé à CCM",
+        "LADLE_OPEN_TIME": "Heure Début (Heure Ouverture)",
+        "LADLE_CLOSE_TIME": "Heure Fin (Heure Fermeture)",
+        "LADLE_OPEN_WEIGHT": "Poids Acier Arrivé de LF",
+        "LADLE_CLOSE_WEIGHT": "Poids Fermeture Poche",
+        "RECYCLE_HEAT_WEIGHT": "Poids Acier jeté",
+        "RETURN_LF_HEAT_WEIGHT": "Poids Acier recuclé vers LF",
+        "RETURN_EAF_HEAT_WEIGHT": "Poids Acier recuclé vers EAF",
+        "CAST_END_TUND_WEIGHT": "Poids Reste dans TUNDISH "
+    },
+    "PROD_EAF": {
+        "HEATID": "Primary Key (double)",
+        "TREATID": "Primary Key (double)",
+        "PRODORDERID_ACT": "N° Coulée",
+        "STEELGRADECODE_ACT": "Grade demandée",
+        "HEATANNOUNCE_ACT": "Heure Début",
+        "HEATDEPARTURE_ACT": "Heure Fin",
+        "POIDS_RETOUR_POCHE": "Poids Acier recyclé",
+        "TOTAL_ELEC_EGY": "Consommation Elec. ",
+        "POWER_ON_DUR": "Durée démarrage d'arc électrique",
+        "POWER_OFF_DUR": "Durée arrêt d'arc électrique",
+        "BURNER_TOTALOXY": "Consommation Oxygène",
+        "BURNER_TOTALGAS": "Consommation GPL",
+        "INJ_CARBON": "Consommation Carbon Injecté",
+        "TAPPING_WEIGHT": "Poids Acier",
+        "TAPPING_DUR_SEC": "Durée de vidange"
+    },
+    "PROD_LF": {
+        "HEATID": "Primary Key (double)",
+        "TREATID": "Primary Key (double)",
+        "PRODORDERID_ACT": "N° Coulée",
+        "STEELGRADECODE_ACT": "Grade demandée",
+        "HEATANNOUNCE_ACT": "Heure Début",
+        "HEATDEPARTURE_ACT": "Heure Fin",
+        "LADLE_TAREWEIGHT": "Poids Tare",
+        "LADLENO": "N° Poche",
+        "CREWCODE": "N° Equipe",
+        "ELEC_CONS_TOTAL": "Consommation Elec. ",
+        "POWER_ON_DUR": "Durée démarrage d'arc électrique",
+        "STIRR_AR_CONS": "Consommation Argon",
+        "STIRR_N2_CONS": "Consommation Azote"
+    }
+}
+In any result don't use comma in the number. and no space in the number or special characters.Dont round the number.
 here is the schema of the database:
 {
   "database": {
-    "path": "database.db",
-    "sqlite_version": "3.43.1"
+    "path": "databasevf.db",
+    "sqlite_version": "3.49.1"
   },
   "tables": {
-    "acierie": {
+    "Dictionnaire_de_donnee": {
       "columns": [
         {
           "cid": 0,
-          "name": "Unnamed: 0",
-          "type": "REAL",
+          "name": "Table",
+          "type": "TEXT",
           "notnull": false,
           "default_value": null,
           "pk": false
         },
         {
           "cid": 1,
-          "name": "Unnamed: 1",
+          "name": "Colonne",
           "type": "TEXT",
           "notnull": false,
           "default_value": null,
@@ -107,15 +217,7 @@ here is the schema of the database:
         },
         {
           "cid": 2,
-          "name": "Unnamed: 2",
-          "type": "TEXT",
-          "notnull": false,
-          "default_value": null,
-          "pk": false
-        },
-        {
-          "cid": 3,
-          "name": "Unnamed: 3",
+          "name": "signification",
           "type": "TEXT",
           "notnull": false,
           "default_value": null,
@@ -125,48 +227,7 @@ here is the schema of the database:
       "foreign_keys": [],
       "indexes": [],
       "triggers": [],
-      "create_sql": "CREATE TABLE \"acierie\" (\n\"Unnamed: 0\" REAL,\n  \"Unnamed: 1\" TEXT,\n  \"Unnamed: 2\" TEXT,\n  \"Unnamed: 3\" TEXT\n)",
-      "primary_keys": []
-    },
-    "Dictionnaire de données": {
-      "columns": [
-        {
-          "cid": 0,
-          "name": "Unnamed: 0",
-          "type": "REAL",
-          "notnull": false,
-          "default_value": null,
-          "pk": false
-        },
-        {
-          "cid": 1,
-          "name": "Unnamed: 1",
-          "type": "TEXT",
-          "notnull": false,
-          "default_value": null,
-          "pk": false
-        },
-        {
-          "cid": 2,
-          "name": "Unnamed: 2",
-          "type": "TEXT",
-          "notnull": false,
-          "default_value": null,
-          "pk": false
-        },
-        {
-          "cid": 3,
-          "name": "Unnamed: 3",
-          "type": "TEXT",
-          "notnull": false,
-          "default_value": null,
-          "pk": false
-        }
-      ],
-      "foreign_keys": [],
-      "indexes": [],
-      "triggers": [],
-      "create_sql": "CREATE TABLE \"Dictionnaire de données\" (\n\"Unnamed: 0\" REAL,\n  \"Unnamed: 1\" TEXT,\n  \"Unnamed: 2\" TEXT,\n  \"Unnamed: 3\" TEXT\n)",
+      "create_sql": "CREATE TABLE \"Dictionnaire de données\" (\n\"Table\" TEXT,\n  \"Colonne\" TEXT,\n  \"signification\" TEXT\n)",
       "primary_keys": []
     },
     "Tolérances Analyses": {
@@ -181,7 +242,7 @@ here is the schema of the database:
         },
         {
           "cid": 1,
-          "name": "Unnamed: 1",
+          "name": "Interval",
           "type": "TEXT",
           "notnull": false,
           "default_value": null,
@@ -279,7 +340,7 @@ here is the schema of the database:
       "foreign_keys": [],
       "indexes": [],
       "triggers": [],
-      "create_sql": "CREATE TABLE \"Tolérances Analyses\" (\n\"Grade\" TEXT,\n  \"Unnamed: 1\" TEXT,\n  \"C\" REAL,\n  \"Mn\" REAL,\n  \"Si\" REAL,\n  \"P\" REAL,\n  \"S\" REAL,\n  \"Al\" REAL,\n  \"Ca\" REAL,\n  \"Cu\" REAL,\n  \"Ni\" REAL,\n  \"Cr\" REAL,\n  \"Nb\" REAL\n)",
+      "create_sql": "CREATE TABLE \"Tolérances Analyses\" (\n\"Grade\" TEXT,\n  \"Interval\" TEXT,\n  \"C\" REAL,\n  \"Mn\" REAL,\n  \"Si\" REAL,\n  \"P\" REAL,\n  \"S\" REAL,\n  \"Al\" REAL,\n  \"Ca\" REAL,\n  \"Cu\" REAL,\n  \"Ni\" REAL,\n  \"Cr\" REAL,\n  \"Nb\" REAL\n)",
       "primary_keys": []
     },
     "01-PAF": {
@@ -2385,3 +2446,6 @@ here is the schema of the database:
   "views": []
 }
 """
+
+
+  
