@@ -1,0 +1,230 @@
+# Blueprint “Prompt → Dashboard”
+
+*(version 0.1, full-stack PoC ― prêt à coder en une semaine)*
+
+---
+
+## 1. Vue d’ensemble
+
+```
+User Prompt
+   │
+   ▼
+LLMAgent (ReAct loop)
+   ├─ query_powerbi()         ← interroge modèles / jeux de données PBI
+   ├─ select_ui_component()   ← mappe la forme des données → composant UI
+   └─ assemble_dashboard()    ← concatène les composants dans un template
+        ▼
+  HTML + JS + CSS = Dashboard interactif
+```
+
+---
+
+## 2. Évolution de ta classe `LLM`
+
+### 2.1 Nouvelles primitives
+
+```python
+# ─── tools_powerbi.py ─────────────────────────────────────────────
+def query_powerbi(dataset_id: str,
+                  expression: str | None = None,
+                  measure: str | None = None,
+                  filters: dict | None = None,
+                  top_n: int | None = None) -> dict:
+    """
+    Exécute un DAX/query REST Power BI, renvoie un payload JSON :
+      { "type": "timeseries" | "kpi" | "table",
+        "data": {...} }
+    """
+    # 1) auth (AAD) + call POST /executeQueries
+    # 2) ou simplement requests.get(f"https://api.powerbi.com/...")
+    # 3) retourne un dict prêt à consommer côté frontend
+    ...
+
+def select_ui_component(data_shape: str) -> str:
+    """
+    Associe le 'type' renvoyé par query_powerbi à un composant frontend.
+    Exemple: 'timeseries' -> 'LineChartComponent'
+    """
+    mapping = {"timeseries": "LineChartComponent",
+               "kpi": "KPIBoxComponent",
+               "table": "TableComponent"}
+    return mapping.get(data_shape, "TableComponent")
+
+def assemble_dashboard(components: list[dict]) -> str:
+    """
+    Reçoit une liste:
+      [ { "component": "LineChartComponent", "props": {...} }, ... ]
+    et rend le HTML complet (string) en injectant les props.
+    """
+    from jinja2 import Environment, FileSystemLoader
+    env = Environment(loader=FileSystemLoader("templates"))
+    tpl = env.get_template("dashboard.html")
+    return tpl.render(components=components)
+```
+
+### 2.2 Enregistrer ces trois outils
+
+```python
+from tools_powerbi import query_powerbi, select_ui_component, assemble_dashboard
+self.register_tool("query_powerbi", query_powerbi)
+self.register_tool("select_ui_component", select_ui_component)
+self.register_tool("assemble_dashboard", assemble_dashboard)
+```
+
+### 2.3 Ajuster la boucle ReAct
+
+1. **Étape 1** : le modèle lit le prompt, appelle `query_powerbi`.
+2. **Étape 2** : sur le résultat, il appelle `select_ui_component`.
+3. **Étape 3** : il stocke les couples `(component, props)` dans une variable de contexte
+   (→ mémoire courte dans le prompt, ex. `dashboard_components = [...]`).
+4. **Étape 4** : quand il décide que tout est prêt, il appelle une fois
+   `assemble_dashboard` avec la liste complète.
+5. **Étape 5** : la boucle se termine, la réponse finale de l’assistant **est** le bloc HTML.
+
+Pour permettre à l’agent d’accumuler plusieurs charts avant d’assembler :
+
+````python
+if tool_name == "select_ui_component":
+    dashboard_components.append(tool_result)
+...
+if user_says("génère le dashboard") or len(dashboard_components) > 3:
+    current_prompt = f"""```json
+    {{
+      "tool_call": {{
+        "name": "assemble_dashboard",
+        "arguments": {{"components": dashboard_components}}
+      }}
+    }}
+    ```"""
+````
+
+---
+
+## 3. Librairie Frontend minimaliste
+
+| Composant              | Description courte             | Props attendues                    |
+| ---------------------- | ------------------------------ | ---------------------------------- |
+| **LineChartComponent** | Courbe multi-séries (Chart.js) | `{ labels, series:[{name,data}] }` |
+| **BarChartComponent**  | Histogramme comparatif         | idem                               |
+| **KPIBoxComponent**    | Valeur + variation ±%          | `{ title, value, delta }`          |
+| **TableComponent**     | `<table>` responsive           | `{ headers, rows }`                |
+| **PieChartComponent**  | Répartition %                  | `{ labels, values }`               |
+| **CardListComponent**  | Top N éléments                 | `{ title, items:[{label,value}] }` |
+
+*Fichiers statiques* : `components/*.js` + `components/*.css`.
+Chaque composant expose une fonction `render(targetElement, props)`.
+
+---
+
+## 4. Template Jinja2 `dashboard.html`
+
+```html
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import * as C from '/static/components/index.js';
+
+    const layout = {{ components|tojson }};
+    const root = document.getElementById('app');
+
+    layout.forEach(({component, props}) => {
+      const el = document.createElement('div');
+      root.appendChild(el);
+      C[component].render(el, props);
+    });
+  </script>
+</body>
+</html>
+```
+
+---
+
+## 5. Exemple de dialogue ReAct
+
+```
+User  : Montre-moi le CA mensuel 2024 et le top 5 produits.
+LLM 1 : → tool_call query_powerbi  (timeseries)
+LLM 2 : → tool_call select_ui_component ("LineChartComponent")
+LLM 3 : → tool_call query_powerbi  (table top N)
+LLM 4 : → tool_call select_ui_component ("TableComponent")
+LLM 5 : → tool_call assemble_dashboard([ …2 composants… ])
+Assistant final => <HTML>
+```
+
+---
+
+## 6. Persistance / mémoire courte
+
+* **`dashboard_components`** (list) conservé localement dans la boucle.
+* Stocker la dernière version dans Redis avec une clé `session_id:dashboard`
+  pour permettre “modifie le graphique de droite”.
+
+---
+
+## 7. Sécurité & quota Power BI
+
+* Auth **OAuth2 client-credentials** (service principal)
+  → token 60 min, refresh automatique dans `query_powerbi`.
+* Limiter la taille du JSON (ex. max 5 k lignes) avant de passer au frontend.
+* Logger la requête DAX générée pour audit.
+
+
+## De « Écris-moi un dashboard » → « HTML interactif affiché »
+
+*(chaîne d’exécution détaillée)*
+
+1. **Prompt utilisateur**
+
+   * Exemple : *« Montre-moi le CA mensuel 2024 et le top 5 produits »*.
+   * Reçu par la classe `LLM.get_completion(prompt)`.
+
+2. **Construction du contexte**
+
+   * `SystemPrompt` + description des outils + prompt courant.
+   * Injecté dans `messages=[{"role":"user","content":full_context}]` pour le modèle.
+
+3. **Boucle ReAct interne** (`while tool_call_count < max_tool_calls`)
+
+   | Tour | Rôle du LLM                                                                                                | Ce qu’il renvoie                                                                                    | Ce que fait le runtime                                 |
+   | ---- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+   | 1    | *Reason* → identifie qu’il a besoin des ventes mensuelles                                                  | `json {"tool_call":{ "name":"query_powerbi", "arguments":{…}}}`                                     | `parse_tool_call()` → appel réel à `query_powerbi()`   |
+   | 1b   | `query_powerbi` exécute la requête DAX → renvoie `{ "type":"timeseries", "data":{labels:[…], values:[…]}}` | Runtime ajoute le résultat dans le prompt suivant                                                   |                                                        |
+   | 2    | LLM choisit le composant adapté                                                                            | `json {"tool_call":{"name":"select_ui_component","arguments":{"data_shape":"timeseries"}}}`         | Appel `select_ui_component()` → `"LineChartComponent"` |
+   | 2b   | Runtime empile `{"component":"LineChartComponent","props":{…}}` dans `dashboard_components`                |                                                                                                     |                                                        |
+   | 3    | LLM voit qu’il manque le top 5 → appelle de nouveau `query_powerbi`                                        | …                                                                                                   | …                                                      |
+   | 4    | LLM mappe la table vers `"TableComponent"`                                                                 | …                                                                                                   | `dashboard_components` += 1                            |
+   | 5    | LLM juge le dashboard complet → appelle `assemble_dashboard`                                               | `json {"tool_call":{"name":"assemble_dashboard","arguments":{"components": dashboard_components}}}` | `assemble_dashboard()` rend un fichier HTML complet    |
+
+4. **Sortie finale de la boucle**
+
+   * `get_completion()` détecte qu’aucun nouveau `tool_call` n’est présent après `assemble_dashboard` → retourne **la string HTML**.
+
+5. **Côté serveur Web**
+
+   * La réponse HTML est renvoyée au navigateur (ou sauvegardée dans un fichier).
+   * Le `<script type="module">` importe `components/index.js`, lit le tableau `layout`, instancie chaque composant avec ses `props`.
+   * Chart.js rend le graphe, le tableau HTML se remplit, les KPI-box s’animent → **dashboard interactif visible**.
+
+6. **Boucle de corrections** (optionnelle)
+
+   * Si l’utilisateur dit *« Ajoute la marge brute »*, la même logique ReAct se ré-exécute : on recharge l’ancien `dashboard_components` depuis Redis, on ajoute la nouvelle carte KPI, on régénère le HTML.
+
+---
+
+### Points techniques importants
+
+* **Mémoire courte** : `dashboard_components` vit dans la boucle et/ou Redis → permet l’itération.
+* **Limitation d’appels d’outil** : `max_tool_calls` évite les boucles infinies.
+* **Sécurité / quota PBI** : chaque `query_powerbi` rafraîchit son token AAD et logge la requête DAX.
+* **Extensibilité** : ajouter un composant = 1 fichier JS + 1 mapping de plus dans `select_ui_component`.
+
+Voilà le parcours complet, de la phrase utilisateur jusqu’au dashboard que tu peux embedder ou servir tel quel.

@@ -1,0 +1,255 @@
+
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Dashboard Interactif</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <link rel="stylesheet" href="/static/styles.css"/>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            #app {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+                gap: 20px;
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+            .component-container {
+                background: white;
+                border-radius: 8px;
+                padding: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                min-height: 300px;
+            }
+            .kpi-container {
+                min-height: 150px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+            }
+            .kpi-value {
+                font-size: 2.5em;
+                font-weight: bold;
+                color: #2196F3;
+            }
+            .kpi-title {
+                font-size: 1.2em;
+                color: #666;
+                margin-bottom: 10px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            th, td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #f2f2f2;
+                font-weight: bold;
+            }
+            canvas {
+                max-width: 100%;
+                height: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <h1 style="text-align: center; color: #333; margin-bottom: 30px;">Dashboard de Production</h1>
+        <div id="app"></div>
+
+        <script type="module">
+            const components = [
+  {
+    "component": "KPIBoxComponent",
+    "props": {
+      "value": 45926712.86,
+      "unit": "kWh",
+      "description": "Consommation \u00e9lectrique EAF totale"
+    }
+  },
+  {
+    "component": "KPIBoxComponent",
+    "props": {
+      "value": 3698200,
+      "unit": "kWh",
+      "description": "Consommation \u00e9lectrique LF totale"
+    }
+  },
+  {
+    "component": "KPIBoxComponent",
+    "props": {
+      "value": 49624912.86,
+      "unit": "kWh",
+      "description": "Consommation \u00e9lectrique totale du proc\u00e9d\u00e9"
+    }
+  }
+];
+            const root = document.getElementById('app');
+
+            // Component implementations
+            const ComponentLibrary = {
+                LineChartComponent: {
+                    render(element, props) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 400;
+                        canvas.height = 200;
+                        element.appendChild(canvas);
+                        
+                        const ctx = canvas.getContext('2d');
+                        new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: props.labels,
+                                datasets: props.series.map((serie, index) => ({
+                                    label: serie.name,
+                                    data: serie.data,
+                                    borderColor: `hsl(${index * 137.5}, 70%, 50%)`,
+                                    backgroundColor: `hsla(${index * 137.5}, 70%, 50%, 0.1)`,
+                                    tension: 0.4
+                                }))
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+                    }
+                },
+                
+                PieChartComponent: {
+                    render(element, props) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 300;
+                        canvas.height = 300;
+                        element.appendChild(canvas);
+                        
+                        const ctx = canvas.getContext('2d');
+                        new Chart(ctx, {
+                            type: 'pie',
+                            data: {
+                                labels: props.labels,
+                                datasets: [{
+                                    data: props.values,
+                                    backgroundColor: props.labels.map((_, index) => 
+                                        `hsl(${index * 137.5}, 70%, 60%)`
+                                    )
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false
+                            }
+                        });
+                    }
+                },
+                
+                KPIBoxComponent: {
+                    render(element, props) {
+                        element.className += ' kpi-container';
+                        element.innerHTML = `
+                            <div>
+                                <div class="kpi-title">${props.title}</div>
+                                <div class="kpi-value">${props.value}${props.delta !== null ? ` (${props.delta > 0 ? '+' : ''}${props.delta})` : ''}</div>
+                            </div>
+                        `;
+                    }
+                },
+                
+                TableComponent: {
+                    render(element, props) {
+                        const table = document.createElement('table');
+                        
+                        // Headers
+                        const thead = document.createElement('thead');
+                        const headerRow = document.createElement('tr');
+                        props.headers.forEach(header => {
+                            const th = document.createElement('th');
+                            th.textContent = header;
+                            headerRow.appendChild(th);
+                        });
+                        thead.appendChild(headerRow);
+                        table.appendChild(thead);
+                        
+                        // Rows
+                        const tbody = document.createElement('tbody');
+                        props.rows.forEach(row => {
+                            const tr = document.createElement('tr');
+                            row.forEach(cell => {
+                                const td = document.createElement('td');
+                                td.textContent = cell;
+                                tr.appendChild(td);
+                            });
+                            tbody.appendChild(tr);
+                        });
+                        table.appendChild(tbody);
+                        
+                        element.appendChild(table);
+                    }
+                },
+                
+                BarChartComponent: {
+                    render(element, props) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 400;
+                        canvas.height = 200;
+                        element.appendChild(canvas);
+                        
+                        const ctx = canvas.getContext('2d');
+                        new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: props.labels,
+                                datasets: props.series.map((serie, index) => ({
+                                    label: serie.name,
+                                    data: serie.data,
+                                    backgroundColor: `hsla(${index * 137.5}, 70%, 60%, 0.8)`,
+                                    borderColor: `hsl(${index * 137.5}, 70%, 50%)`,
+                                    borderWidth: 1
+                                }))
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            };
+
+            // Render all components
+            components.forEach(({component, props}) => {
+                const container = document.createElement('div');
+                container.className = 'component-container';
+                root.appendChild(container);
+                
+                if (ComponentLibrary[component]) {
+                    ComponentLibrary[component].render(container, props);
+                } else {
+                    container.innerHTML = `<p>Component ${component} not found</p>`;
+                }
+            });
+        </script>
+    </body>
+    </html>
+            

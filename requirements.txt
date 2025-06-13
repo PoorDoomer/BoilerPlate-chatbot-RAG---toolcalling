@@ -8,3 +8,6 @@ pandas
 openpyxl
 python-magic
 python-multipart
+jinja2
+requests
+python-dotenv

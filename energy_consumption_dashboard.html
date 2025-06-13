@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Dashboard Consommation Énergétique</title>
+
+  <!-- Google Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/feather-icons"></script>
+
+  <!-- Base palette (CSS variables) -->
+  <style>
+    :root {
+      /* Light theme */
+      --clr-bg: #f9fafb;
+      --clr-surface: #ffffff;
+      --clr-fg: #111827;
+      --clr-muted: #6b7280;
+      --clr-primary: #3b82f6;
+      --clr-shadow: rgba(0,0,0,.06);
+      --radius: 12px;
+    }
+    [data-theme="dark"] {
+      --clr-bg: #111827;
+      --clr-surface: #1f2937;
+      --clr-fg: #f3f4f6;
+      --clr-muted: #9ca3af;
+      --clr-primary: #60a5fa;
+      --clr-shadow: rgba(0,0,0,.6);
+    }
+
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,'Open Sans','Helvetica Neue',sans-serif;
+      background:var(--clr-bg);
+      color:var(--clr-fg);
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+
+    header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:1rem 1.5rem;background:var(--clr-surface);
+      box-shadow:0 1px 3px var(--clr-shadow);
+    }
+    header h1{font-size:1.35rem;font-weight:600;letter-spacing:-.01em}
+    header .actions{display:flex;gap:.75rem}
+    header button{
+      background:none;border:1px solid var(--clr-muted);
+      border-radius:6px;padding:.35rem .6rem;font-size:.85rem;
+      color:var(--clr-fg);cursor:pointer;transition:background .15s ease;
+    }
+    header button:hover{background:rgba(0,0,0,.05)}
+
+    #app{
+      flex:1;display:grid;gap:1.25rem;padding:1.5rem;
+      grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-content:start;
+    }
+    .component-container{
+      background:var(--clr-surface);border-radius:var(--radius);
+      padding:1.25rem 1.5rem;box-shadow:0 2px 6px var(--clr-shadow);
+      overflow:hidden;display:flex;flex-direction:column;
+    }
+
+    /* KPI */
+    .kpi-title{font-size:.9rem;font-weight:600;letter-spacing:.02em;color:var(--clr-muted);
+                margin-bottom:.35rem;text-transform:uppercase}
+    .kpi-value{font-size:2.6rem;font-weight:700;color:var(--clr-primary);line-height:1}
+    .kpi-delta{font-size:.9rem;font-weight:600;margin-top:.25rem}
+    .kpi-delta.positive{color:#16a34a}
+    .kpi-delta.negative{color:#dc2626}
+
+    /* Table */
+    table{width:100%;border-collapse:collapse;font-size:.87rem}
+    thead{background:rgba(0,0,0,.04)}
+    th,td{padding:.55rem .65rem;text-align:left;border-bottom:1px solid rgba(0,0,0,.08)}
+    tr:last-child td{border-bottom:none}
+
+    /* Card list */
+    .card-list{display:flex;flex-direction:column;gap:.75rem}
+    .card-item{display:flex;align-items:center;gap:.9rem;padding:.65rem .75rem;
+               background:var(--clr-bg);border-radius:8px;box-shadow:0 1px 2px var(--clr-shadow)}
+    .card-item i{width:20px;height:20px;color:var(--clr-primary)}
+
+    footer{text-align:center;font-size:.75rem;color:var(--clr-muted);padding:.5rem 0 1rem}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dashboard Consommation Énergétique</h1>
+    <div class="actions">
+      <button id="theme-toggle">Thème</button>
+      <button id="export-png">Export PNG</button>
+    </div>
+  </header>
+  <main id="app"></main>
+  <footer>
+    Généré automatiquement · Dashboard Consommation Énergétique
+  </footer>
+
+  <script type="module">
+    /*──────────────── Jinja data ────────────────*/
+    const components = [{&#34;type&#34;: &#34;kpi&#34;, &#34;title&#34;: &#34;Conso Électrique EAF&#34;, &#34;value&#34;: 45926712.86, &#34;unit&#34;: &#34;kWh&#34;}, {&#34;type&#34;: &#34;kpi&#34;, &#34;title&#34;: &#34;Conso Électrique LF&#34;, &#34;value&#34;: 661790, &#34;unit&#34;: &#34;kWh&#34;}, {&#34;type&#34;: &#34;kpi&#34;, &#34;title&#34;: &#34;Conso Électrique Totale&#34;, &#34;value&#34;: 46588502.86, &#34;unit&#34;: &#34;kWh&#34;}];
+
+    /*──────────────── Theme toggle ──────────────*/
+    const rootEl = document.documentElement;
+    const btnTheme = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('dashboard-theme');
+    if (savedTheme) rootEl.setAttribute('data-theme', savedTheme);
+    btnTheme.addEventListener('click', () => {
+      const newTheme = rootEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      rootEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('dashboard-theme', newTheme);
+    });
+
+    /*──────────────── UI Library ────────────────*/
+    const UI = {
+      KPIBoxComponent: (p) => {
+        const w = document.createElement('div');
+        w.innerHTML = `<div class="kpi-title">${p.title}</div><div class="kpi-value">${p.value}</div>`;
+        if (p.delta!==null && p.delta!==undefined){
+          const d=document.createElement('div');d.className='kpi-delta '+(p.delta>0?'positive':p.delta<0?'negative':'');
+          d.textContent=`(${p.delta>0?'+':''}${p.delta})`;
+          w.appendChild(d);
+        }
+        return w;
+      },
+
+      LineChartComponent: (p) => createChart('line', p),
+      BarChartComponent : (p) => createChart('bar', p),
+      PieChartComponent : (p) => createChart('pie', p, true),
+
+      TableComponent: (p) => {
+        const t=document.createElement('table');
+        t.innerHTML = `<thead><tr>${p.headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>`;
+        const tb=document.createElement('tbody');
+        p.rows.forEach(r=>{tb.innerHTML+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`});
+        t.appendChild(tb);return t;
+      },
+
+      CardListComponent: (p) => {
+        const ul=document.createElement('div');ul.className='card-list';
+        p.items.forEach(it=>{
+          const li=document.createElement('div');li.className='card-item';
+          li.innerHTML=`<i data-feather="${it.icon||'info'}"></i><div>${it.text}</div>`;ul.appendChild(li);
+        });feather.replace();return ul;
+      }
+    };
+
+    function createChart(type, p, singleDataset=false){
+      const c=document.createElement('canvas');
+      new Chart(c, {
+        type,
+        data:{
+          labels:p.labels,
+          datasets: singleDataset ? [{data:p.data,backgroundColor:p.colors||undefined}] : p.series.map((s,i)=>({
+            label:s.name,
+            data:s.data,
+            borderWidth:2,
+            borderColor:`hsl(${i*137.5},70%,50%)`,
+            backgroundColor:type==='pie'?`hsl(${i*137.5},70%,50%)`:`hsla(${i*137.5},70%,50%,.15)`,
+            fill:type==='line'
+          }))
+        },
+        options:{responsive:true,plugins:{legend:{display:type!=='pie' || (p.series && p.series.length>1)}}}
+      });
+      return c;
+    }
+
+    /*──────────────── Render pipeline ───────────*/
+    const root=document.getElementById('app');
+    components.forEach(({component, props}) => {
+      const box=document.createElement('div');box.className='component-container';
+      const rend = UI[component] || (()=>{
+        const e=document.createElement('div');e.textContent=`❓ Composant inconnu : ${component}`;return e;
+      });
+      box.appendChild(rend(props));
+      root.appendChild(box);
+    });
+
+    /*──────────────── Quick PNG export ──────────*/
+    document.getElementById('export-png').addEventListener('click', async () => {
+      const html2canvasMod = await import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm');
+      html2canvasMod.default(root).then(canvas=>{
+        const link=document.createElement('a');
+        link.download='dashboard.png';
+        link.href=canvas.toDataURL('image/png');
+        link.click();
+      });
+    });
+  </script>
+</body>
+</html>
