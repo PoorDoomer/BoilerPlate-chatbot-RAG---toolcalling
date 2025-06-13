@@ -57,8 +57,16 @@ class LLM:
         )
         self.tools: Dict[str, Dict[str, Any]] = {}
         
-        # NEW: Initialize the scratchpad for persistent storage
-        self.scratchpad: Dict[str, Any] = {}
+        # Initialize the structured scratchpad with goal state tracking
+        self.scratchpad: Dict[str, Any] = {
+            "goal_state": {
+                "original_request": "",
+                "current_plan": [],
+                "completed_steps": [],
+                "key_findings": {}
+            },
+            "data_cache": {}  # Where large data blobs go
+        }
         
         # Register SQL query tool by default
         self.register_tool("sql_query", sql_query)
@@ -69,17 +77,14 @@ class LLM:
         # Register the Tools class methods
         self.register_tools_from_class(self.tool_instance) #New line
         
-        # NEW: Register scratchpad tools
-        self.register_tool(
-            "save_to_scratchpad", 
-            self.save_to_scratchpad
-        )
-        self.register_tool(
-            "load_from_scratchpad", 
-            self.load_from_scratchpad
-        )
+        # Register scratchpad and meta-cognitive tools
+        self.register_tool("save_to_scratchpad", self.save_to_scratchpad)
+        self.register_tool("load_from_scratchpad", self.load_from_scratchpad)
+        self.register_tool("self_reflect", self.self_reflect)
+        self.register_tool("update_goal_state", self.update_goal_state)
+        self.register_tool("create_new_tool", self.create_new_tool)
         
-        print("[DEBUG] LLM initialization complete")
+        print("[DEBUG] LLM initialization complete with advanced cognitive capabilities")
         
     def register_tool(self, name: str, func: Callable) -> None:
         """
@@ -132,7 +137,7 @@ class LLM:
         Returns:
             str: Confirmation message
         """
-        self.scratchpad[key] = value
+        self.scratchpad["data_cache"][key] = value
         print(f"[DEBUG] Saved to scratchpad with key: '{key}'")
         return f"Value saved to scratchpad with key: '{key}'"
         
@@ -146,9 +151,15 @@ class LLM:
         Returns:
             Any: The stored data or error message if key not found
         """
-        if key in self.scratchpad:
+        # Check if it's a special key for goal state
+        if key == "goal_state":
+            return self.scratchpad["goal_state"]
+            
+        # Otherwise look in data cache
+        if key in self.scratchpad["data_cache"]:
             print(f"[DEBUG] Loaded from scratchpad with key: '{key}'")
-            return self.scratchpad.get(key)
+            return self.scratchpad["data_cache"].get(key)
+            
         print(f"[DEBUG] Key '{key}' not found in scratchpad")
         return f"Error: Key '{key}' not found in scratchpad."
         
@@ -164,6 +175,98 @@ class LLM:
         """
         import uuid
         return f"{prefix}_{uuid.uuid4().hex[:6]}"
+        
+    def self_reflect(self, critique: str, new_plan: str) -> Dict[str, str]:
+        """
+        Critiques the current plan and proposes a new one.
+        Use this when the current approach is not working or you are stuck.
+        This tool will clear the recent, flawed history and inject the new plan.
+        
+        Args:
+            critique (str): A brief explanation of what went wrong.
+            new_plan (str): A step-by-step description of the new approach.
+            
+        Returns:
+            Dict: The critique and new plan for the meta-loop to process
+        """
+        print(f"[DEBUG] Self-reflection triggered: {critique[:100]}...")
+        return {"critique": critique, "new_plan": new_plan}
+        
+    def update_goal_state(self, 
+                          plan_update: Optional[List[str]] = None, 
+                          completed_step: Optional[str] = None, 
+                          new_finding_key: Optional[str] = None, 
+                          new_finding_value: Optional[Any] = None,
+                          original_request: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Updates the agent's internal state about its goal, plan, and findings.
+        Use this after completing a major step to track progress.
+
+        Args:
+            plan_update (Optional[List[str]]): A new or revised list of steps for the plan.
+            completed_step (Optional[str]): The description of the step just completed.
+            new_finding_key (Optional[str]): The key for a new insight or result.
+            new_finding_value (Optional[Any]): The summary of the new insight.
+            original_request (Optional[str]): The original user request (set once at the beginning).
+            
+        Returns:
+            Dict: The current goal state.
+        """
+        gs = self.scratchpad['goal_state']
+        
+        if original_request:
+            gs['original_request'] = original_request
+            
+        if plan_update is not None:
+            gs['current_plan'] = plan_update
+            
+        if completed_step:
+            gs['completed_steps'].append(completed_step)
+            
+        if new_finding_key and new_finding_value is not None:
+            gs['key_findings'][new_finding_key] = new_finding_value
+            
+        print(f"[DEBUG] Goal state updated: {len(gs['current_plan'])} steps, {len(gs['completed_steps'])} completed")
+        return gs
+        
+    def create_new_tool(self, tool_name: str, python_code: str, description: str) -> str:
+        """
+        Dynamically creates and registers a new tool from a string of Python code.
+        The code must define a function with the same name as `tool_name`.
+        This new tool can then be used in subsequent steps.
+
+        Args:
+            tool_name (str): The name for the new tool.
+            python_code (str): A string containing the full Python code for the function.
+            description (str): A docstring explaining what the new tool does.
+            
+        Returns:
+            str: Success or error message
+        """
+        try:
+            # Execute the code in a temporary namespace
+            temp_namespace = {}
+            exec(python_code, globals(), temp_namespace)
+            
+            if tool_name not in temp_namespace:
+                return f"Error: Code did not define a function named '{tool_name}'."
+            
+            new_func = temp_namespace[tool_name]
+            
+            # Dynamically create a method on the tool_instance to hold the new function
+            bound_method = new_func.__get__(self.tool_instance, self.tool_instance.__class__)
+            setattr(self.tool_instance, tool_name, bound_method)
+            
+            # Register the newly created tool
+            self.register_tool(tool_name, bound_method)
+            # Update the function's docstring
+            self.tools[tool_name]['description'] = description
+            
+            print(f"[DEBUG] Successfully created and registered new tool: '{tool_name}'")
+            return f"Success! The tool '{tool_name}' has been created and is now available for use."
+        except Exception as e:
+            print(f"[DEBUG] Failed to create new tool: {e}")
+            return f"Error creating tool: {str(e)}"
         
     def get_tools_description(self) -> str:
         """
@@ -414,7 +517,20 @@ class LLM:
         # ────────────────────────────────────────────────────────────
         # 1) Prépare les messages "system"
         # ────────────────────────────────────────────────────────────
-        sys_base  = system_prompt_override or SystemPrompt().system_prompt
+        sys_base = system_prompt_override or SystemPrompt().system_prompt
+        
+        # Add meta-cognitive capabilities to the system prompt
+        meta_cognitive_prompt = """
+### 🧠 Meta-Cognition
+If you find yourself stuck, making repetitive errors, or if your plan is not working, use the self_reflect tool to critique your own work and formulate a new plan. This is your most powerful ability.
+
+### 🛠️ The Toolsmith
+You are not limited to the existing tools. If you need a specific function that doesn't exist, use create_new_tool to write it yourself in Python. For example, if you need to aggregate data by week, you can write a get_weekly_data tool and then use it.
+
+### 🎯 Mission Command
+At the beginning of your task, use update_goal_state to set your plan. After each significant step, update your state with the step you completed and any key findings. This helps you track progress on complex tasks.
+"""
+        sys_base += meta_cognitive_prompt
         sys_tools = self.get_tools_description()
 
         chat_history = [
@@ -422,6 +538,9 @@ class LLM:
             {"role": "system", "content": sys_tools},
             {"role": "user",   "content": prompt},
         ]
+
+        # Save the original request to the goal state
+        self.update_goal_state(original_request=prompt)
 
         tool_call_count = 0
         print(f"[DEBUG] Starting ReAct loop with max {max_tool_calls} tool calls")
@@ -460,6 +579,32 @@ class LLM:
             print(f"[DEBUG] Tool call detected: {name} with args: {arguments}")
             tool_result = self.execute_tool(name, arguments)
 
+            # --- NEW: Self-Correction Logic ---
+            if name == "self_reflect":
+                print("[DEBUG] Self-reflection triggered. Pruning history and injecting new plan.")
+                critique = tool_result.get("critique", "No critique provided.")
+                new_plan = tool_result.get("new_plan", "No new plan provided.")
+                
+                # Find the last user message to prune back to
+                last_user_msg_index = -1
+                for i in range(len(chat_history) - 1, -1, -1):
+                    if chat_history[i]["role"] == "user":
+                        last_user_msg_index = i
+                        break
+                
+                # Prune the history, keeping system prompts and the last user message
+                if last_user_msg_index != -1:
+                    chat_history = chat_history[:last_user_msg_index + 1]
+                
+                # Inject a summary of the self-correction
+                correction_summary = f"System Note: The previous attempt failed. Critique: '{critique}'. Adopting a new plan: '{new_plan}'"
+                chat_history.append({"role": "system", "content": correction_summary})
+                
+                # Restart the loop iteration with the new, corrected history
+                print("[DEBUG] Chat history pruned and reset with new plan")
+                continue
+            # --- END of Self-Correction Logic ---
+
             # Mettez à jour la liste de composants si on vient de builder le dashboard
             if name == "assemble_dashboard" and isinstance(arguments, dict):
                 self.dashboard_components = arguments.get("components", [])
@@ -489,12 +634,18 @@ class LLM:
             if is_large_result and name != "load_from_scratchpad":
                 # The result is too big! Save it to the scratchpad
                 key = self._generate_scratchpad_key(prefix=f"{name}_result")
-                self.save_to_scratchpad(key, tool_result)
+                self.scratchpad["data_cache"][key] = tool_result
                 
                 # Create a summary message for the AI instead of the raw data
                 summary = f"Tool '{name}' executed. Result is large ({result_size} items or {len(payload)} chars). "
                 summary += f"It has been saved to your scratchpad with key '{key}'. "
                 summary += "Use load_from_scratchpad to access it when needed."
+                
+                # Also save a reference to this result in the goal state's key_findings
+                if name.startswith("sql_query") or name.startswith("get_timeseries"):
+                    finding_key = f"data_{len(self.scratchpad['goal_state']['key_findings']) + 1}"
+                    self.scratchpad['goal_state']['key_findings'][finding_key] = f"Large dataset from {name} stored at key: {key}"
+                
                 tool_content_for_history = summary
                 print(f"[DEBUG] Large result detected. Saved to scratchpad with key '{key}'")
             else:

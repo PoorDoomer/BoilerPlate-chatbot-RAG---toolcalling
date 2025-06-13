@@ -1,0 +1,7 @@
+=== Chat Session Log Started at 2025-06-13 13:55:30.742707 ===
+
+[2025-06-13 13:55:30] Chat Manager initialized with agent: <ulti_llm.UltimateAgent object at 0x000001776925A720>
+[2025-06-13 13:55:34] User message: Make a dashboard for the following KPIs : la conso electrique EAF, la conso electrique LF  la conso electrique totale
+[2025-06-13 13:55:34] Current history length: 0
+[2025-06-13 13:57:07] Agent response:  "type": "REAL", "notnull": false, "default_value": null, "pk": false}, {"cid": 39, "name": "_Tsol",...
+[2025-06-13 13:57:07] History updated, new length: 2
